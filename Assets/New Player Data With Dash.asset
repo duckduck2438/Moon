@@ -57,6 +57,6 @@ MonoBehaviour:
   maxComboCount: 3
   comboWindowTime: 0.5
   attackRange: 3
-  attackKnockbackForce: 0
+  attackKnockbackForce: 1
   attackKnockbackDir: {x: 0, y: 0}
   attackInputBufferTime: 0.1

@@ -17,6 +17,7 @@ public class PlayerMovement : MonoBehaviour
 
 	#region COMPONENTS
 	public Rigidbody2D RB { get; private set; }
+	public SpriteRenderer spriteRenderer { get; private set; }
 	#endregion
 
 	#region ATTACK EFFECT
@@ -93,6 +94,7 @@ public class PlayerMovement : MonoBehaviour
 	private void Awake()
 	{
 		RB = GetComponent<Rigidbody2D>();
+		spriteRenderer = GetComponent<SpriteRenderer>();
 	}
 
 	private void Start()
@@ -118,7 +120,7 @@ public class PlayerMovement : MonoBehaviour
 		_moveInput.x = Input.GetAxisRaw("Horizontal");
 		_moveInput.y = Input.GetAxisRaw("Vertical");
 
-		if (_moveInput.x != 0)
+		if (_moveInput.x != 0 && !IsAttacking)
 			CheckDirectionToFace(_moveInput.x > 0);
 
 		if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.C) || Input.GetKeyDown(KeyCode.J))
@@ -128,14 +130,14 @@ public class PlayerMovement : MonoBehaviour
 
 		// 점프 키 상태 수동 추적 (GetKeyUp 대체)
 		bool jumpKeyIsPressed = Input.GetKey(KeyCode.Space) || Input.GetKey(KeyCode.C) || Input.GetKey(KeyCode.J);
-		
+
 		if (_jumpKeyWasPressed && !jumpKeyIsPressed)
 		{
 			// 이전 프레임에는 누르고 있었는데 지금은 안 누르고 있음 = 키를 떸
 			OnJumpUpInput();
 			Debug.Log("Manual Jump Up detected! moving: " + (_moveInput.x != 0));
 		}
-		
+
 		_jumpKeyWasPressed = jumpKeyIsPressed;
 
 		if (Input.GetKeyDown(KeyCode.X) || Input.GetKeyDown(KeyCode.LeftShift) || Input.GetKeyDown(KeyCode.K))
@@ -156,17 +158,27 @@ public class PlayerMovement : MonoBehaviour
 			if (!IsJumping && Physics2D.OverlapBox(_groundCheckPoint.position, _groundCheckSize, 0, _groundLayer)) // 설정된 박스가 땅과 겹치는지 확인
 			{
 				LastOnGroundTime = Data.coyoteTime; // 겹친다면 lastGrounded를 coyoteTime으로 설정
+													// 땅에 닿으면 대시 쿨타임 초기화
+				_dashesLeft = Data.dashAmount;
 			}
 
 			// 오른쪽 벽 체크 - 점프 중에도 작동
 			if (((Physics2D.OverlapBox(_frontWallCheckPoint.position, _wallCheckSize, 0, _wallLayer) && IsFacingRight)
 					|| (Physics2D.OverlapBox(_backWallCheckPoint.position, _wallCheckSize, 0, _wallLayer) && !IsFacingRight)) && !IsWallJumping)
+			{
 				LastOnWallRightTime = Data.coyoteTime;
+				// 벽에 닿으면 대시 쿨타임 초기화
+				_dashesLeft = Data.dashAmount;
+			}
 
 			// 왼쪽 벽 체크 - 점프 중에도 작동
 			if (((Physics2D.OverlapBox(_frontWallCheckPoint.position, _wallCheckSize, 0, _wallLayer) && !IsFacingRight)
 				|| (Physics2D.OverlapBox(_backWallCheckPoint.position, _wallCheckSize, 0, _wallLayer) && IsFacingRight)) && !IsWallJumping)
+			{
 				LastOnWallLeftTime = Data.coyoteTime;
+				// 벽에 닿으면 대시 쿨타임 초기화
+				_dashesLeft = Data.dashAmount;
+			}
 
 			// 플레이어가 방향을 바꿀 때마다 벽 체크 포인트가 바뀌므로 왼쪽과 오른쪽 벽 모두 두 번 체크 필요
 			LastOnWallTime = Mathf.Max(LastOnWallLeftTime, LastOnWallRightTime);
@@ -251,8 +263,8 @@ public class PlayerMovement : MonoBehaviour
 			IsSliding = true;
 		}
 		// 점프 중 벽에 닿으면 점프 상태 종료 -> 슬라이딩 가능하게
-		else if (IsJumping && LastOnWallTime > 0 && LastOnGroundTime <= 0 && 
-		         ((LastOnWallLeftTime > 0 && _moveInput.x < 0) || (LastOnWallRightTime > 0 && _moveInput.x > 0)))
+		else if (IsJumping && LastOnWallTime > 0 && LastOnGroundTime <= 0 &&
+				 ((LastOnWallLeftTime > 0 && _moveInput.x < 0) || (LastOnWallRightTime > 0 && _moveInput.x > 0)))
 		{
 			IsJumping = false;
 			IsSliding = true;
@@ -264,12 +276,12 @@ public class PlayerMovement : MonoBehaviour
 		#endregion
 
 		#region ATTACK CHECKS
-	// 벽에 붙어있으면 공격 입력 버퍼 초기화
-	if (LastOnWallTime > 0 && LastPressedAttackTime > 0)
-	{
-		LastPressedAttackTime = 0;
-	}
-	
+		// 벽에 붙어있으면 공격 입력 버퍼 초기화
+		if (LastOnWallTime > 0 && LastPressedAttackTime > 0)
+		{
+			LastPressedAttackTime = 0;
+		}
+
 		if (IsDashing && LastPressedAttackTime > 0)
 		{
 			StopCoroutine(nameof(StartDash));
@@ -277,13 +289,13 @@ public class PlayerMovement : MonoBehaviour
 			_isDashAttacking = false;
 			SetGravityScale(Data.gravityScale);
 		}
-		
+
 		// 슬라이드 중 공격 입력 시 슬라이드 중단
 		if (IsSliding && LastPressedAttackTime > 0)
 		{
 			IsSliding = false;
 		}
-		
+
 		if (CanAttack() && LastPressedAttackTime > 0)
 		{
 			Attack();
@@ -363,18 +375,16 @@ public class PlayerMovement : MonoBehaviour
 
 	private void FixedUpdate()
 	{
-		// 공중 공격 중에는 공중에 멈춰있기
-		if (IsAttacking && LastOnGroundTime <= 0)
+		// 공격 중에는 멈춰있기
+		if (IsAttacking)
 		{
-			RB.velocity = Vector2.zero;
+			RB.velocity = new Vector2(0, 0);
 		}
 
 		// 달리기 처리
-		if (!IsDashing && !IsSliding)
+		if (!IsDashing && !IsSliding && !IsAttacking)
 		{
-			if (IsAttacking)
-				Run(Data.attackMoveSpeedMult);
-			else if (IsWallJumping)
+			if (IsWallJumping)
 				Run(Data.wallJumpRunLerp);
 			else
 				Run(1);
@@ -634,10 +644,10 @@ public class PlayerMovement : MonoBehaviour
 			// 생성 위치 계산 (플레이어 위치 + 방향에 따른 attackRange)
 			float offsetX = Data.attackRange * (IsFacingRight ? 1 : -1);
 			Vector3 spawnPos = transform.position + new Vector3(offsetX, 0, 0);
-			
+
 			// 공격 이펙트 생성
 			_currentAttackEffect = Instantiate(_attackEffectPrefab, spawnPos, Quaternion.identity);
-			
+
 			// 방향에 맞춰 스케일 조정 (왼쪽 보면 뒤집기)
 			if (!IsFacingRight)
 			{
@@ -645,14 +655,14 @@ public class PlayerMovement : MonoBehaviour
 				scale.x *= -1;
 				_currentAttackEffect.transform.localScale = scale;
 			}
-			
+
 			// Animator가 있으면 콤보 카운트 전달
 			Animator effectAnim = _currentAttackEffect.GetComponent<Animator>();
 			if (effectAnim != null)
 			{
 				effectAnim.SetInteger("ComboCount", _currentComboCount);
 			}
-			
+
 			// 공격 지속 시간 후 자동 삭제
 			Destroy(_currentAttackEffect, Data.attackDuration);
 		}
@@ -687,15 +697,15 @@ public class PlayerMovement : MonoBehaviour
 	{
 		// 현재 땅에 있는지 실시간 체크
 		bool isOnGround = Physics2D.OverlapBox(_groundCheckPoint.position, _groundCheckSize, 0, _groundLayer);
-		
+
 		// 현재 벽에 붙어있는지 실시간 체크
 		bool isTouchingWall = Physics2D.OverlapBox(_frontWallCheckPoint.position, _wallCheckSize, 0, _wallLayer) ||
-		                      Physics2D.OverlapBox(_backWallCheckPoint.position, _wallCheckSize, 0, _wallLayer);
-		
+							  Physics2D.OverlapBox(_backWallCheckPoint.position, _wallCheckSize, 0, _wallLayer);
+
 		// 땅과 벽에 동시에 붙어있으면 점프 불가
 		if (isOnGround && isTouchingWall)
 			return false;
-		
+
 		return LastOnGroundTime > 0 && !IsJumping;
 	}
 
@@ -717,11 +727,6 @@ public class PlayerMovement : MonoBehaviour
 
 	private bool CanDash()
 	{
-		if (!IsDashing && _dashesLeft < Data.dashAmount && LastOnGroundTime > 0 && !_dashRefilling)
-		{
-			StartCoroutine(nameof(RefillDash), 1);
-		}
-
 		return _dashesLeft > 0;
 	}
 
@@ -740,7 +745,7 @@ public class PlayerMovement : MonoBehaviour
 		{
 			return false;
 		}
-		
+
 		// 공격 중이 아니고, 쿨다운이 끝났으면 공격 가능 (대시와 슬라이드는 중단 가능)
 		if (!IsAttacking)
 		{
@@ -770,6 +775,36 @@ public class PlayerMovement : MonoBehaviour
 		Gizmos.DrawWireCube(_backWallCheckPoint.position, _wallCheckSize);
 	}
 	#endregion
+
+	void OnCollisionEnter2D(Collision2D collision)
+	{
+		if (collision.gameObject.CompareTag("Enemy"))
+		{
+			Debug.Log("맞았습니다");
+			OnDamaged(collision.transform.position);
+		}
+
+	}
+
+	void OnDamaged(Vector3 targetPos)
+	{
+		//맞았으면 PlayerDamaged 레이어로 바꾸기
+		gameObject.layer = 9; // 9번은 PlayerDamaged
+
+		spriteRenderer.color = new Color(1, 1, 1, 0.5f); // 반투명 효과
+
+
+		//1초 후에 원래 레이어로 복귀
+		Invoke("ResetLayer", 1f);
+	}
+
+	void ResetLayer()
+	{
+		gameObject.layer = 3; // 3번은 Player
+		spriteRenderer.color = new Color(1, 1, 1, 1f); // 원래 상태 복원
+	}
+
 }
+
 
 // Dawnosaur 제작 :D
