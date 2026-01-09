@@ -62,6 +62,7 @@ public class PlayerMovement : MonoBehaviour
 	private int _currentComboCount;
 	private float _lastAttackTime;
 	private float _attackEndTime;
+	private bool _isKnockbacking = false; // 넉백 중인지 여부
 
 	#endregion
 
@@ -89,6 +90,7 @@ public class PlayerMovement : MonoBehaviour
 	[Header("Layers & Tags")]
 	[SerializeField] private LayerMask _groundLayer;
 	[SerializeField] private LayerMask _wallLayer;
+	[SerializeField] private LayerMask _enemyLayer;
 	#endregion
 
 	private void Awake()
@@ -135,7 +137,6 @@ public class PlayerMovement : MonoBehaviour
 		{
 			// 이전 프레임에는 누르고 있었는데 지금은 안 누르고 있음 = 키를 떸
 			OnJumpUpInput();
-			Debug.Log("Manual Jump Up detected! moving: " + (_moveInput.x != 0));
 		}
 
 		_jumpKeyWasPressed = jumpKeyIsPressed;
@@ -375,14 +376,14 @@ public class PlayerMovement : MonoBehaviour
 
 	private void FixedUpdate()
 	{
-		// 공격 중에는 멈춰있기
-		if (IsAttacking)
+		// 공중 공격 중에는 멈춰있기 (땅에서는 넉백 허용)
+		if (IsAttacking && LastOnGroundTime <= 0)
 		{
-			RB.velocity = new Vector2(0, 0);
+			RB.velocity = new Vector2(0, RB.velocity.y);
 		}
 
-		// 달리기 처리
-		if (!IsDashing && !IsSliding && !IsAttacking)
+		// 달리기 처리 (넉백 중에는 Run 실행 안함)
+		if (!IsDashing && !IsSliding && !IsAttacking && !_isKnockbacking)
 		{
 			if (IsWallJumping)
 				Run(Data.wallJumpRunLerp);
@@ -408,15 +409,9 @@ public class PlayerMovement : MonoBehaviour
 
 	public void OnJumpUpInput()
 	{
-		Debug.Log($"OnJumpUpInput called! IsJumping: {IsJumping}, IsWallJumping: {IsWallJumping}, velocity.y: {RB.velocity.y}, CanJumpCut: {CanJumpCut()}");
 		if (CanJumpCut() || CanWallJumpCut())
 		{
 			_isJumpCut = true;
-			Debug.Log("Jump Cut SUCCESS! velocity.y: " + RB.velocity.y);
-		}
-		else
-		{
-			Debug.Log("Jump Cut FAILED - conditions not met");
 		}
 	}
 
@@ -638,11 +633,40 @@ public class PlayerMovement : MonoBehaviour
 		// 콤보 카운트 증가
 		_currentComboCount++;
 
-		// 공격 이펙트 생성/활성화
+		// 히트박스 쿼리로 적 직접 감지
+		float offsetX = Data.attackRange * (IsFacingRight ? 1 : -1);
+		
+		// 플레이어 중앙과 공격 끝점의 중점을 히트박스 중앙으로 사용
+		Vector2 attackEndPoint = (Vector2)transform.position + new Vector2(offsetX, 0);
+		Vector2 attackPos = ((Vector2)transform.position + attackEndPoint) / 2f; // 중점 계산
+		Vector2 attackSize = Data.attackHitboxSize; // PlayerData에서 설정한 크기 사용
+
+		Debug.Log("=== Attack Started ===");
+		Debug.Log("Player Position: " + (Vector2)transform.position);
+		Debug.Log("Attack End Point: " + attackEndPoint);
+		Debug.Log("Attack Center (Midpoint): " + attackPos);
+		Debug.Log("Attack Size: " + attackSize);
+		Debug.Log("Enemy Layer Mask: " + _enemyLayer.value);
+
+		// 공격 범위 내의 모든 적 감지
+		Collider2D[] hitEnemies = Physics2D.OverlapBoxAll(attackPos, attackSize, 0, _enemyLayer);
+		
+		Debug.Log("Hit Enemies Count: " + hitEnemies.Length);
+		
+		foreach (Collider2D enemy in hitEnemies)
+		{
+			
+			EnemyMovement enemyScript = enemy.GetComponent<EnemyMovement>();
+			if (enemyScript != null)
+			{
+				enemyScript.TakeDamage(); // 코루틴을 갱신하는 메서드 호출
+			}
+		}
+
+		// 공격 이펙트 생성/활성화 (비주얼용)
 		if (_attackEffectPrefab != null)
 		{
-			// 생성 위치 계산 (플레이어 위치 + 방향에 따른 attackRange)
-			float offsetX = Data.attackRange * (IsFacingRight ? 1 : -1);
+			// 생성 위치 계산
 			Vector3 spawnPos = transform.position + new Vector3(offsetX, 0, 0);
 
 			// 공격 이펙트 생성
@@ -672,8 +696,20 @@ public class PlayerMovement : MonoBehaviour
 		{
 			Vector2 knockbackDir = Data.attackKnockbackDir.normalized;
 			knockbackDir.x *= IsFacingRight ? 1 : -1;
-			RB.AddForce(knockbackDir * Data.attackKnockbackForce, ForceMode2D.Impulse);
+			
+			// 넉백 적용 (velocity 직접 설정으로 즉시 반영)
+			RB.velocity = new Vector2(knockbackDir.x * Data.attackKnockbackForce, RB.velocity.y + knockbackDir.y * Data.attackKnockbackForce);
+			
+			// 넉백 지속 시간 동안 Run() 영향 차단
+			StartCoroutine(KnockbackDuration(0.1f));
 		}
+	}
+	
+	private IEnumerator KnockbackDuration(float duration)
+	{
+		_isKnockbacking = true;
+		yield return new WaitForSeconds(duration);
+		_isKnockbacking = false;
 	}
 	#endregion
 
@@ -746,16 +782,16 @@ public class PlayerMovement : MonoBehaviour
 			return false;
 		}
 
-		// 공격 중이 아니고, 쿨다운이 끝났으면 공격 가능 (대시와 슬라이드는 중단 가능)
+		// 공격 중이 아니면
 		if (!IsAttacking)
 		{
-			// 쿨다운 체크
-			if (Time.time - _lastAttackTime >= Data.attackCooldown)
+			// 콤보 중이고 아직 최대 콤보에 도달하지 않았으면 쿨타임 없이 바로 공격 가능
+			if (_currentComboCount >= 0 && _currentComboCount < Data.maxComboCount - 1 && Time.time - _lastAttackTime <= Data.comboWindowTime)
 			{
 				return true;
 			}
-			// 콤보 윈도우 내에 있고, 아직 최대 콤보에 도달하지 않았으면 공격 가능
-			else if (_currentComboCount > 0 && _currentComboCount < Data.maxComboCount && Time.time - _lastAttackTime <= Data.comboWindowTime)
+			// 콤보가 아니면 쿨다운 체크
+			else if (Time.time - _lastAttackTime >= Data.attackCooldown)
 			{
 				return true;
 			}
@@ -773,6 +809,16 @@ public class PlayerMovement : MonoBehaviour
 		Gizmos.color = Color.blue;
 		Gizmos.DrawWireCube(_frontWallCheckPoint.position, _wallCheckSize);
 		Gizmos.DrawWireCube(_backWallCheckPoint.position, _wallCheckSize);
+		
+		// 공격 히트박스 시각화
+		if (IsAttacking && Data != null)
+		{
+			Gizmos.color = Color.red;
+			float offsetX = Data.attackRange * (IsFacingRight ? 1 : -1);
+			Vector2 attackEndPoint = (Vector2)transform.position + new Vector2(offsetX, 0);
+			Vector2 attackPos = ((Vector2)transform.position + attackEndPoint) / 2f; // 중점
+			Gizmos.DrawWireCube(attackPos, Data.attackHitboxSize);
+		}
 	}
 	#endregion
 

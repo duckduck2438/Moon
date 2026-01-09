@@ -90,6 +90,7 @@ public class PlayerDataWithDash : ScriptableObject
 	public float comboWindowTime; // 콤보 계속을 위해 다음 공격을 입력할 수 있는 시간 창
 	[Space(5)]
 	public float attackRange; // 공격 이펙트가 나타나는 플레이어로부터의 거리
+	public Vector2 attackHitboxSize; // 공격 히트박스 크기 (x = 너비, y = 높이)
 	[Space(5)]
 	public float attackKnockbackForce; // 공격 중 플레이어에게 적용되는 힘 (이동하는 공격용)
 	public Vector2 attackKnockbackDir; // 공격 중 넷백/이동의 방향 (정규화됨)
