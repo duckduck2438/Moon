@@ -62,7 +62,6 @@ public class PlayerMovement : MonoBehaviour
 	private int _currentComboCount;
 	private float _lastAttackTime;
 	private float _attackEndTime;
-	private bool _isKnockbacking = false; // 넉백 중인지 여부
 
 	#endregion
 
@@ -159,11 +158,11 @@ public class PlayerMovement : MonoBehaviour
 			if (!IsJumping && Physics2D.OverlapBox(_groundCheckPoint.position, _groundCheckSize, 0, _groundLayer)) // 설정된 박스가 땅과 겹치는지 확인
 			{
 				LastOnGroundTime = Data.coyoteTime; // 겹친다면 lastGrounded를 coyoteTime으로 설정
-													// 땅에 닿으면 대시 쿨타임 초기화
+				// 땅에 닿으면 대시 쿨타임 초기화
 				_dashesLeft = Data.dashAmount;
 			}
 
-			// 오른쪽 벽 체크 - 점프 중에도 작동
+			// 오른쪽 벽 체크
 			if (((Physics2D.OverlapBox(_frontWallCheckPoint.position, _wallCheckSize, 0, _wallLayer) && IsFacingRight)
 					|| (Physics2D.OverlapBox(_backWallCheckPoint.position, _wallCheckSize, 0, _wallLayer) && !IsFacingRight)) && !IsWallJumping)
 			{
@@ -172,7 +171,7 @@ public class PlayerMovement : MonoBehaviour
 				_dashesLeft = Data.dashAmount;
 			}
 
-			// 왼쪽 벽 체크 - 점프 중에도 작동
+			// 왼쪽 벽 체크
 			if (((Physics2D.OverlapBox(_frontWallCheckPoint.position, _wallCheckSize, 0, _wallLayer) && !IsFacingRight)
 				|| (Physics2D.OverlapBox(_backWallCheckPoint.position, _wallCheckSize, 0, _wallLayer) && IsFacingRight)) && !IsWallJumping)
 			{
@@ -277,8 +276,8 @@ public class PlayerMovement : MonoBehaviour
 		#endregion
 
 		#region ATTACK CHECKS
-		// 벽에 붙어있으면 공격 입력 버퍼 초기화
-		if (LastOnWallTime > 0 && LastPressedAttackTime > 0)
+		// 슬라이드 중이면 공격 입력 버퍼 초기화
+		if (IsSliding && LastPressedAttackTime > 0)
 		{
 			LastPressedAttackTime = 0;
 		}
@@ -376,14 +375,14 @@ public class PlayerMovement : MonoBehaviour
 
 	private void FixedUpdate()
 	{
-		// 공중 공격 중에는 멈춰있기 (땅에서는 넉백 허용)
-		if (IsAttacking && LastOnGroundTime <= 0)
+		// 공격 중에는 완전히 멈춰있기
+		if (IsAttacking)
 		{
-			RB.velocity = new Vector2(0, RB.velocity.y);
+			RB.velocity = Vector2.zero;
 		}
 
 		// 달리기 처리 (넉백 중에는 Run 실행 안함)
-		if (!IsDashing && !IsSliding && !IsAttacking && !_isKnockbacking)
+		if (!IsDashing && !IsSliding && !IsAttacking)
 		{
 			if (IsWallJumping)
 				Run(Data.wallJumpRunLerp);
@@ -691,26 +690,8 @@ public class PlayerMovement : MonoBehaviour
 			Destroy(_currentAttackEffect, Data.attackDuration);
 		}
 
-		// 공격 시 이동 효과 (옵션)
-		if (Data.attackKnockbackForce > 0)
-		{
-			Vector2 knockbackDir = Data.attackKnockbackDir.normalized;
-			knockbackDir.x *= IsFacingRight ? 1 : -1;
-			
-			// 넉백 적용 (velocity 직접 설정으로 즉시 반영)
-			RB.velocity = new Vector2(knockbackDir.x * Data.attackKnockbackForce, RB.velocity.y + knockbackDir.y * Data.attackKnockbackForce);
-			
-			// 넉백 지속 시간 동안 Run() 영향 차단
-			StartCoroutine(KnockbackDuration(0.1f));
-		}
 	}
 	
-	private IEnumerator KnockbackDuration(float duration)
-	{
-		_isKnockbacking = true;
-		yield return new WaitForSeconds(duration);
-		_isKnockbacking = false;
-	}
 	#endregion
 
 	#region OTHER MOVEMENT METHODS
@@ -731,17 +712,6 @@ public class PlayerMovement : MonoBehaviour
 
 	private bool CanJump()
 	{
-		// 현재 땅에 있는지 실시간 체크
-		bool isOnGround = Physics2D.OverlapBox(_groundCheckPoint.position, _groundCheckSize, 0, _groundLayer);
-
-		// 현재 벽에 붙어있는지 실시간 체크
-		bool isTouchingWall = Physics2D.OverlapBox(_frontWallCheckPoint.position, _wallCheckSize, 0, _wallLayer) ||
-							  Physics2D.OverlapBox(_backWallCheckPoint.position, _wallCheckSize, 0, _wallLayer);
-
-		// 땅과 벽에 동시에 붙어있으면 점프 불가
-		if (isOnGround && isTouchingWall)
-			return false;
-
 		return LastOnGroundTime > 0 && !IsJumping;
 	}
 
@@ -776,8 +746,8 @@ public class PlayerMovement : MonoBehaviour
 
 	private bool CanAttack()
 	{
-		// 벽에 붙어있을 때는 공격 불가능
-		if (LastOnWallTime > 0)
+		// 벽 슬라이드 중일 때는 공격 불가능
+		if (IsSliding)
 		{
 			return false;
 		}

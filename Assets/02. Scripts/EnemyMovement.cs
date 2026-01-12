@@ -10,6 +10,7 @@ public class EnemyMovement : MonoBehaviour
     float moveSpeed = 3f;
     float rayDistance = 10f;
     bool isHit = false;
+    int hitCount = 0;
 
     public PlayerDataWithDash Data;
     
@@ -90,9 +91,21 @@ public class EnemyMovement : MonoBehaviour
     // 외부에서 호출할 메서드 (코루틴 추적)
     public void TakeDamage()
     {
+        hitCount++;
         hitCoroutine = StartCoroutine(OnHit());
+
+        if(hitCount >= 5)
+        {
+            OnDie();
+        }
         // health -= damage;
         // if (health <= 0) Die();
+    }
+
+    public void OnDie()
+    {
+        gameObject.SetActive(false);
+        hitCount = 0;
     }
 
 }

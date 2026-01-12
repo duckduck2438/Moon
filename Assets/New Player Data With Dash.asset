@@ -43,21 +43,21 @@ MonoBehaviour:
   coyoteTime: 0.01
   jumpInputBufferTime: 0.1
   dashAmount: 1
-  dashSpeed: 18
+  dashSpeed: 30
   dashSleepTime: 0.05
-  dashAttackTime: 0.35
-  dashEndTime: 0.25
+  dashAttackTime: 0.1
+  dashEndTime: 0.01
   dashEndSpeed: {x: 5, y: 5}
   dashEndRunLerp: 0.4
   dashRefillTime: 1
   dashInputBufferTime: 0.1
   attackDuration: 0.3
-  attackCooldown: 0.5
+  attackCooldown: 0.01
   attackMoveSpeedMult: 0
   maxComboCount: 3
   comboWindowTime: 0.5
   attackRange: 3
   attackHitboxSize: {x: 3, y: 2}
-  attackKnockbackForce: 4
-  attackKnockbackDir: {x: 1, y: 0}
+  attackKnockbackForce: 0
+  attackKnockbackDir: {x: 0, y: 0}
   attackInputBufferTime: 0.1
