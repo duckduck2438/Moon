@@ -51,6 +51,11 @@ public class PlayerDataWithDash : ScriptableObject
 	[Range(0f, 1.5f)] public float wallJumpTime; // 벽 점프 후 플레이어 이동이 느려지는 시간
 	public bool doTurnOnWallJump; // 플레이어가 벽 점프 방향을 향하도록 회전합니다
 
+	[Header("Distance")]
+
+	public float GrounderDistance;
+	public float WallDistance;
+
 	[Space(20)]
 
 	[Header("Slide")]
